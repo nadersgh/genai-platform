@@ -44,3 +44,6 @@ produce-adsb:
 	$(PIPE) ingest.producer_opensky --max-polls $${POLLS:-3}
 produce-cmapss:
 	$(PIPE) ingest.producer_cmapss $(ARGS)
+.PHONY: produce-cars
+produce-cars:
+	$(PIPE) ingest.producer_cars

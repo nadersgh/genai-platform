@@ -42,3 +42,25 @@ def test_cmapss_row_mapping():
     ev = row_to_event("FD001", cols, datetime(2026, 1, 1, tzinfo=timezone.utc))
     assert ev["aircraft_id"] == "cmapss:FD001-u001"
     assert abs(ev["altitude_m"] - 3048) < 1 and abs(ev["engine_temp_c"] - 611.1) < 0.5
+
+
+def test_cars_extraction_keeps_structure(tmp_path):
+    from ingest.producer_cars import iter_sections, section_event
+    xml = tmp_path / "c.xml"
+    xml.write_text(
+        '<Regulation><Body>'
+        '<Heading level="1"><Label>PART I</Label><TitleText>General</TitleText></Heading>'
+        '<Heading level="2"><TitleText>Short Title</TitleText></Heading>'
+        '<Section><Label>100.01</Label><MarginalNote>Scope</MarginalNote>'
+        '<Subsection><Label>(1)</Label><Text>Applies to <XRefInternal>(2)</XRefInternal>.'
+        '<FootnoteRef>a</FootnoteRef></Text></Subsection>'
+        '<HistoricalNote>SOR/2019-1</HistoricalNote></Section>'
+        '<Heading level="1"><TitleText>PART II</TitleText></Heading>'
+        '<Section><Label>200.01</Label><Text>Other.</Text></Section>'
+        '</Body></Regulation>')
+    a, b = list(iter_sections(xml))
+    assert a[0] == "100.01" and a[1] == "PART I General > Short Title" and a[2] == "Scope"
+    assert "SOR/2019" not in a[3] and a[3].startswith("100.01 Scope (1) Applies to (2)")
+    assert b[1] == "PART II"          # level-1 heading resets the trail
+    ev = section_event("en", *a)
+    assert ev["doc_id"] == "cars-en-100.01" and ev["lang"] == "en" and ev["title"] == "CAR 100.01 - Scope"
