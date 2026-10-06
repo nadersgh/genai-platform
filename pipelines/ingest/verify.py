@@ -1,7 +1,7 @@
 """Row counts, duplicate check and basic quality stats on bronze tables (Polars, lazy)."""
 import polars as pl
 
-from .catalog import scan
+from .catalog import REJECTS, scan
 
 PROV = ["_topic", "_partition", "_offset"]
 
@@ -26,6 +26,15 @@ def main() -> None:
             last=pl.col("event_time").max(),
         )
         .sort("source")
+        .collect()
+    )
+
+    print(f"\n{REJECTS} by topic:")
+    print(
+        scan(REJECTS)
+        .group_by("_topic")
+        .agg(rows=pl.len(), sample_error=pl.col("error").first())
+        .sort("_topic")
         .collect()
     )
 

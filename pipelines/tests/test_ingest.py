@@ -2,6 +2,8 @@ import random
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from ingest.producer_docs import doc_event
 from ingest.producer_telemetry import make_event
 
@@ -64,3 +66,88 @@ def test_cars_extraction_keeps_structure(tmp_path):
     assert b[1] == "PART II"          # level-1 heading resets the trail
     ev = section_event("en", *a)
     assert ev["doc_id"] == "cars-en-100.01" and ev["lang"] == "en" and ev["title"] == "CAR 100.01 - Scope"
+
+
+def test_delete_event_matches_upsert_identity(tmp_path: Path):
+    from ingest.catalog import DocOp
+    from ingest.producer_docs import delete_event
+    (tmp_path / "acme").mkdir()
+    (tmp_path / "acme" / "a.md").write_text("# T\nbody")
+
+    up = doc_event(tmp_path, tmp_path / "acme" / "a.md")
+    rm = delete_event(Path("acme/a.md"))
+
+    assert (rm["doc_id"], rm["tenant"], rm["op"]) == (up["doc_id"], "acme", DocOp.DELETE)
+    assert "content" not in rm and up["op"] == DocOp.UPSERT
+
+
+class FakeMessage:
+    def __init__(self, value: bytes | None, topic: str = "telemetry.raw"):
+        self._value, self._topic = value, topic
+
+    def value(self) -> bytes | None:
+        return self._value
+
+    def topic(self) -> str:
+        return self._topic
+
+    def partition(self) -> int:
+        return 0
+
+    def offset(self) -> int:
+        return 7
+
+
+NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def test_parse_message_routes_valid_json_and_keeps_raw():
+    from ingest.sink_bronze import parse_message
+    raw = b'{"aircraft_id": "X", "event_time": "2026-01-01T00:00:00+00:00"}'
+
+    name, row = parse_message(FakeMessage(raw), NOW)
+
+    assert name == "telemetry" and row["aircraft_id"] == "X"
+    assert row["_raw"] == raw.decode() and row["_offset"] == 7
+
+
+@pytest.mark.parametrize("raw", [b"not json", b"[1, 2]", None, b"\xff\xfe"])
+def test_parse_message_rejects_undecodable_payloads(raw):
+    from ingest.sink_bronze import parse_message
+
+    name, row = parse_message(FakeMessage(raw), NOW)
+
+    assert name == "rejects" and row["error"] and row["_offset"] == 7
+
+
+def test_build_batch_isolates_bad_rows():
+    from ingest.catalog import TELEMETRY_SCHEMA
+    from ingest.sink_bronze import build_batch
+    prov = {"_topic": "telemetry.raw", "_partition": 0, "_ingested_at": NOW, "_raw": "{}"}
+    good = {"aircraft_id": "A", "event_time": "2026-01-01T00:00:00+00:00", "engine_temp_c": 600.0}
+    rows = [
+        {**prov, "_offset": 1, **good},
+        {**prov, "_offset": 2, **good, "aircraft_id": None},           # required field missing
+        {**prov, "_offset": 3, **good, "event_time": "yesterday"},     # unparseable timestamp
+        {**prov, "_offset": 4, **good, "engine_temp_c": "hot"},        # wrong type
+        {**prov, "_offset": 5, **good},
+    ]
+
+    batch, rejects = build_batch(rows, TELEMETRY_SCHEMA.as_arrow())
+
+    assert batch.column("_offset").to_pylist() == [1, 5]
+    assert sorted(r["_offset"] for r in rejects) == [2, 3, 4]
+    assert all(r["error"] for r in rejects)
+
+
+def test_rejects_fit_rejects_schema():
+    import pyarrow as pa
+    from ingest.catalog import REJECTS_SCHEMA, TELEMETRY_SCHEMA
+    from ingest.sink_bronze import build_batch
+    rows = [{"_topic": "t", "_partition": 0, "_offset": 1, "_ingested_at": NOW, "_raw": "{}",
+             "aircraft_id": None, "event_time": "2026-01-01T00:00:00+00:00"}]
+    _, rejects = build_batch(rows, TELEMETRY_SCHEMA.as_arrow())
+
+    table = pa.Table.from_pylist(rejects, schema=REJECTS_SCHEMA.as_arrow())
+
+    assert table.num_rows == 1 and table.column("error")[0].as_py()

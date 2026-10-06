@@ -11,6 +11,7 @@ from pathlib import Path
 from confluent_kafka import Producer
 
 from . import config
+from .catalog import DocOp
 
 # Block-level elements get a leading space so "200.02(1)Subject" becomes "200.02 (1) Subject".
 BLOCK = {"Label", "MarginalNote", "Subsection", "Paragraph", "Subparagraph", "Clause",
@@ -69,7 +70,7 @@ def section_event(lang: str, label: str, path: str, note: str, text: str) -> dic
         "doc_id": f"cars-{lang}-{label}", "title": title, "tenant": "tc-canada",
         "content": text, "content_sha256": hashlib.sha256(text.encode()).hexdigest(),
         "source_path": f"cars_{lang}.xml#{label}", "lang": lang,
-        "section_label": label, "heading_path": path,
+        "section_label": label, "heading_path": path, "op": DocOp.UPSERT,
     }
 
 

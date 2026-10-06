@@ -1,4 +1,6 @@
 """Iceberg catalog (SQL catalog in Postgres, data files on S3) + bronze table definitions."""
+from enum import StrEnum
+
 import boto3
 from botocore.exceptions import ClientError
 from pyiceberg.catalog import Catalog
@@ -13,6 +15,13 @@ from pyiceberg.types import (
 from . import config
 
 NAMESPACE = "bronze"
+REJECTS = "rejects"
+
+
+class DocOp(StrEnum):
+    UPSERT = "upsert"
+    DELETE = "delete"
+
 
 # Kafka provenance columns on every bronze row => replay + dedupe by (topic, partition, offset).
 _PROVENANCE = [
@@ -31,6 +40,7 @@ TELEMETRY_SCHEMA = Schema(
     NestedField(6, "speed_kts", DoubleType()),
     NestedField(7, "engine_temp_c", DoubleType()),
     *_PROVENANCE,
+    NestedField(104, "_raw", StringType()),
 )
 
 DOCS_SCHEMA = Schema(
@@ -45,17 +55,29 @@ DOCS_SCHEMA = Schema(
     NestedField(104, "lang", StringType()),
     NestedField(105, "section_label", StringType()),
     NestedField(106, "heading_path", StringType()),
+    NestedField(107, "op", StringType()),  # DocOp; null in rows written before deletes existed
+    NestedField(108, "_raw", StringType()),
+)
+
+# Messages the sink could not parse or validate; offsets still advance so the sink never stalls.
+REJECTS_SCHEMA = Schema(
+    *_PROVENANCE,
+    NestedField(104, "_raw", StringType()),
+    NestedField(105, "error", StringType(), required=True),
 )
 
 # Columns added after the first release. Existing tables are evolved in place, in this order.
 EVOLVED_COLUMNS = {
-    "docs": {"lang": StringType(), "section_label": StringType(), "heading_path": StringType()},
+    "telemetry": {"_raw": StringType()},
+    "docs": {"lang": StringType(), "section_label": StringType(), "heading_path": StringType(),
+             "op": StringType(), "_raw": StringType()},
 }
 
 TABLES = {
     "telemetry": (TELEMETRY_SCHEMA, PartitionSpec(
         PartitionField(source_id=2, field_id=1000, transform=DayTransform(), name="event_day"))),
     "docs": (DOCS_SCHEMA, PartitionSpec()),
+    REJECTS: (REJECTS_SCHEMA, PartitionSpec()),
 }
 
 
