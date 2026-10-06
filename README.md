@@ -9,7 +9,7 @@ make aws-plan     # needs AWS creds; nothing is created by plan
 make validate
 ```
 
-Local endpoints print as the `endpoints` output. UIs: MLflow http://localhost:5001, Postgres (Adminer) http://localhost:8081 (System: PostgreSQL, user `platform`, db `platform`). See [docs/ROADMAP.md](docs/ROADMAP.md).
+Local endpoints print as the `endpoints` output. UIs: MLflow http://localhost:5001, Postgres (Adminer) http://localhost:8081 (System: PostgreSQL, user `platform`, db `platform`). See [docs/architecture.md](docs/architecture.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
 Local passwords are dev-only defaults; override with a git-ignored `*.tfvars`.
 
 ## Week 2: ingestion

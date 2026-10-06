@@ -18,4 +18,4 @@ Goal: governed GenAI data platform. Ingest -> chunk -> embed -> versioned index 
 | 12 | Architecture write-up | 6-8 ADRs, reference architecture, threat model (PII in embeddings, prompt injection via docs), blog post |
 
 ## ADR backlog
-IaC tool (done) - vector store choice - table format - embedding versioning strategy - streaming vs batch re-embedding - tenant isolation model - build vs buy (Databricks Vector Search etc.).
+See [adr/README.md](adr/README.md) for the index and [architecture.md](architecture.md) for how each ADR maps to a component.
