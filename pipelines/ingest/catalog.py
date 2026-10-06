@@ -41,7 +41,16 @@ DOCS_SCHEMA = Schema(
     NestedField(5, "content_sha256", StringType()),
     NestedField(6, "source_path", StringType()),
     *_PROVENANCE,
+    # added by schema evolution (see EVOLVED_COLUMNS); ids continue after provenance
+    NestedField(104, "lang", StringType()),
+    NestedField(105, "section_label", StringType()),
+    NestedField(106, "heading_path", StringType()),
 )
+
+# Columns added after the first release. Existing tables are evolved in place, in this order.
+EVOLVED_COLUMNS = {
+    "docs": {"lang": StringType(), "section_label": StringType(), "heading_path": StringType()},
+}
 
 TABLES = {
     "telemetry": (TELEMETRY_SCHEMA, PartitionSpec(
@@ -102,7 +111,21 @@ def bootstrap() -> Catalog:
     cat.create_namespace_if_not_exists(NAMESPACE)
     for name, (schema, spec) in TABLES.items():
         cat.create_table_if_not_exists(f"{NAMESPACE}.{name}", schema=schema, partition_spec=spec)
+    evolve_tables(cat)
     return cat
+
+
+def evolve_tables(cat: Catalog) -> None:
+    """Idempotent Iceberg schema evolution: add missing nullable columns (no data rewrite)."""
+    for name, columns in EVOLVED_COLUMNS.items():
+        table = cat.load_table(f"{NAMESPACE}.{name}")
+        existing = {f.name for f in table.schema().fields}
+        missing = {k: v for k, v in columns.items() if k not in existing}
+        if missing:
+            with table.update_schema() as u:
+                for col, typ in missing.items():
+                    u.add_column(col, typ)
+            print(f"evolved bronze.{name}, added:", list(missing))
 
 
 if __name__ == "__main__":
