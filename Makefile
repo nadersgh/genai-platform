@@ -26,7 +26,7 @@ bronze-init:
 produce-telemetry:
 	$(PIPE) ingest.producer_telemetry --events $${EVENTS:-5000} --rate 0
 produce-docs:
-	$(PIPE) ingest.producer_docs
+	$(PIPE) ingest.producer_docs $(ARGS)
 sink:
 	$(PIPE) ingest.sink_bronze --idle-exit 10 --max-wait 3
 verify:

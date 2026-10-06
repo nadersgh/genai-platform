@@ -66,9 +66,10 @@ Full index: [adr/README.md](adr/README.md). Weekly plan: [ROADMAP.md](ROADMAP.md
 | Table | Grain | Key columns | Notes |
 |---|---|---|---|
 | `bronze.telemetry` | one sensor event | `aircraft_id` (prefixed `adsb:`, `cmapss:`, or synthetic tail), `event_time`, position, altitude, speed, `engine_temp_c` | partitioned by day of `event_time`; source-specific gaps are nulls (ADS-B has no engine data, C-MAPSS has no position) |
-| `bronze.docs` | one document (one CAR section, or one file) | `doc_id`, `tenant`, `content`, `content_sha256`, `lang`, `section_label`, `heading_path` | `lang`, `section_label`, `heading_path` added by schema evolution, so older rows hold nulls |
+| `bronze.docs` | one document event (one CAR section, or one file) | `doc_id`, `tenant`, `op`, `content`, `content_sha256`, `lang`, `section_label`, `heading_path` | `op` is `upsert` or `delete` (delete events carry no content; `make produce-docs ARGS="--delete acme/x.md"`). Columns after `source_path` were added by schema evolution, so older rows hold nulls (null `op` = upsert) |
+| `bronze.rejects` | one message the sink could not parse or validate | `_topic`, `_partition`, `_offset`, `_raw`, `error` | offsets still advance, so a bad message never blocks the sink |
 
-Every bronze row also carries `_topic`, `_partition`, `_offset`, `_ingested_at`, so a replay can be deduplicated and any row traced to its Kafka message. The sink commits offsets only after the Iceberg commit, so delivery is at-least-once.
+Every bronze row also carries `_topic`, `_partition`, `_offset`, `_ingested_at` and `_raw` (the original message), so a replay can be deduplicated, any row traced to its Kafka message, and bronze rebuilt without Kafka retention. The sink commits offsets only after the Iceberg commit, so delivery is at-least-once.
 
 ## Known simplifications
 - Local credentials are dev-only defaults; never reuse them in AWS.
